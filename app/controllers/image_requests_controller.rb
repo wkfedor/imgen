@@ -62,6 +62,15 @@ class ImageRequestsController < ApplicationController
     send_file file, type: "image/png", disposition: "inline"
   end
 
+  def destroy_result_image
+    result = ImageResult.find(params[:id])
+    deleted = result.delete_image_files!
+
+    redirect_to image_requests_path(anchor: "request-#{result.image_request_id}"), notice: "Картинка ##{result.id} удалена: локально=#{deleted[:local_deleted]}, сервер=#{deleted[:remote_deleted]}"
+  rescue StandardError => e
+    redirect_to image_requests_path, alert: "Не удалось удалить картинку: #{e.message}"
+  end
+
   private
 
   def serialize_request(request)

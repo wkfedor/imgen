@@ -36,4 +36,15 @@ class ImageRequestsControllerTest < ActionDispatch::IntegrationTest
     assert_equal 1, ComfyGenerationJob.jobs.size
     assert_equal "imgen", ComfyGenerationJob.jobs.first["queue"]
   end
+
+  test "destroy_result_image deletes generated image files" do
+    request_record = ImageRequest.create!(prompt: "prompt", status: "completed")
+    result = request_record.image_results.create!(checkpoint_name: "a.safetensors", status: "completed")
+
+    delete destroy_generated_image_path(result)
+
+    assert_redirected_to image_requests_path(anchor: "request-#{request_record.id}")
+    assert_match "удалена", flash[:notice]
+    assert_equal "deleted", result.reload.status
+  end
 end

@@ -57,8 +57,11 @@
                   <img src="<%= generated_image_path(result) %>" alt="<%= result.checkpoint_name %>">
                 </a>
                 <small>seed <%= result.seed %>, <%= result.duration_sec %> сек</small>
+                <%= button_to "Удалить картинку", destroy_generated_image_path(result), method: :delete, form: { class: "delete-image-form", onsubmit: "return confirm('Удалить картинку локально и с сервера ComfyUI?')" }, class: "delete-image-button" %>
               <% elsif result.error_message.present? %>
                 <pre class="error"><%= result.error_message %></pre>
+              <% elsif result.status == "deleted" %>
+                <div class="placeholder">удалена</div>
               <% else %>
                 <div class="placeholder">ожидает</div>
               <% end %>

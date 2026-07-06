@@ -48,6 +48,19 @@ class ComfyClient
     generated.merge(seed: seed, duration_sec: (Time.current - started_at).round(1))
   end
 
+  def delete_remote_image(filename:, subfolder: nil, type: nil)
+    filename = File.basename(filename.to_s)
+    raise "remote filename blank" if filename.blank?
+
+    subfolder = subfolder.to_s
+    type = type.to_s.presence || "output"
+    raise "remote type #{type.inspect} is not allowed" unless %w[input output temp].include?(type)
+
+    relative = [type, subfolder, filename].reject(&:blank?).join("/")
+    ssh_capture("ruby -e #{Shellwords.escape(remote_delete_script)} -- #{Shellwords.escape(relative)}")
+    true
+  end
+
   private
 
   def direct_available?
@@ -97,10 +110,19 @@ class ComfyClient
     raise "ssh generation returned no image body" if image_body.blank?
 
     meta = JSON.parse(meta_raw, symbolize_names: true)
-    filename = local_filename(meta.dig(:image, :filename), meta.fetch(:prompt_id))
+    image = meta.fetch(:image)
+    filename = local_filename(image[:filename], meta.fetch(:prompt_id))
     path = @output_dir.join(filename)
     File.binwrite(path, image_body)
-    { prompt_id: meta.fetch(:prompt_id), filename: filename, path: path.to_s, bytes: File.size(path) }
+    {
+      prompt_id: meta.fetch(:prompt_id),
+      filename: filename,
+      path: path.to_s,
+      bytes: File.size(path),
+      remote_filename: image[:filename],
+      remote_subfolder: image[:subfolder],
+      remote_type: image[:type]
+    }
   end
 
   def remote_generation_script
@@ -151,6 +173,34 @@ class ComfyClient
     RUBY
   end
 
+  def remote_delete_script
+    <<~'RUBY'
+      require "pathname"
+
+      relative = ARGV.fetch(0)
+      root = Pathname(ENV.fetch("COMFYUI_ROOT", File.expand_path("~/ComfyUI")))
+      allowed_roots = {
+        "input" => root.join("input"),
+        "output" => root.join("output"),
+        "temp" => root.join("temp")
+      }
+      type = relative.split("/", 2).first
+      base = allowed_roots.fetch(type)
+      target = root.join(relative).cleanpath
+
+      unless target.to_s.start_with?(base.cleanpath.to_s + "/")
+        raise "refuse to delete outside #{base}: #{target}"
+      end
+
+      if target.file?
+        target.delete
+        puts "deleted #{target}"
+      else
+        puts "not found #{target}"
+      end
+    RUBY
+  end
+
   def wait_for_image(base_url:, prompt_id:)
     deadline = Time.current + 20.minutes
     until Time.current > deadline
@@ -172,7 +222,15 @@ class ComfyClient
     filename = local_filename(image.fetch("filename"), prompt_id)
     path = @output_dir.join(filename)
     File.binwrite(path, response.body)
-    { prompt_id: prompt_id, filename: filename, path: path.to_s, bytes: File.size(path) }
+    {
+      prompt_id: prompt_id,
+      filename: filename,
+      path: path.to_s,
+      bytes: File.size(path),
+      remote_filename: image.fetch("filename"),
+      remote_subfolder: image.fetch("subfolder", ""),
+      remote_type: image.fetch("type", "output")
+    }
   end
 
   def workflow_for(model:, prompt:, seed:, steps:, width:, height:, prefix:)

@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class ImageResult < ApplicationRecord
-  STATUSES = %w[queued running completed failed].freeze
+  STATUSES = %w[queued running completed failed deleted].freeze
 
   belongs_to :image_request
   validates :checkpoint_name, presence: true
@@ -17,5 +17,55 @@ class ImageResult < ApplicationRecord
     nil
   rescue StandardError
     nil
+  end
+
+  def delete_image_files!
+    local_deleted = delete_local_image
+    remote_deleted = delete_remote_image
+
+    update!(
+      status: "deleted",
+      prompt_id: nil,
+      seed: nil,
+      filename: nil,
+      path: nil,
+      bytes: nil,
+      duration_sec: nil,
+      error_message: nil,
+      remote_filename: nil,
+      remote_subfolder: nil,
+      remote_type: nil
+    )
+
+    { local_deleted: local_deleted, remote_deleted: remote_deleted }
+  end
+
+  private
+
+  def delete_local_image
+    file = image_file
+    return false unless file
+
+    File.delete(file)
+    true
+  rescue Errno::ENOENT
+    false
+  end
+
+  def delete_remote_image
+    inferred_filename = remote_filename.presence || inferred_remote_filename
+    return false if inferred_filename.blank?
+
+    ComfyClient.new.delete_remote_image(filename: inferred_filename, subfolder: remote_subfolder, type: remote_type)
+  end
+
+  def inferred_remote_filename
+    return nil if filename.blank? || prompt_id.blank?
+
+    ext = File.extname(filename)
+    suffix = "_#{prompt_id}#{ext}"
+    return nil unless filename.end_with?(suffix)
+
+    "#{filename.delete_suffix(suffix)}#{ext}"
   end
 end

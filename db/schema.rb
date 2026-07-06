@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_06_000300) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_06_000400) do
   create_table "image_requests", force: :cascade do |t|
     t.text "prompt", null: false
     t.string "status", default: "queued", null: false
@@ -36,6 +36,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_06_000300) do
     t.text "error_message"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "remote_filename"
+    t.string "remote_subfolder"
+    t.string "remote_type"
     t.index ["checkpoint_name"], name: "index_image_results_on_checkpoint_name"
     t.index ["image_request_id"], name: "index_image_results_on_image_request_id"
     t.index ["status"], name: "index_image_results_on_status"

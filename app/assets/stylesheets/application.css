@@ -36,4 +36,8 @@ legend { padding: 0 6px; font-weight: 700; }
 .status-running { border-color: #f59e0b; }
 .status-completed { border-color: #16a34a; }
 .status-failed { border-color: #dc2626; }
+.status-deleted { border-color: #94a3b8; }
 .error { white-space: pre-wrap; overflow-wrap: anywhere; color: #991b1b; font-size: 12px; }
+.delete-image-form { margin-top: 10px; }
+.delete-image-button { width: 100%; background: #dc2626; }
+.delete-image-button:hover { background: #b91c1c; }

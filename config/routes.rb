@@ -13,6 +13,7 @@ Rails.application.routes.draw do
   get "models", to: "image_requests#models"
   post "git_push", to: "git_pushes#create", as: :git_push
   get "generated_images/:id", to: "image_requests#image", as: :generated_image
+  delete "generated_images/:id", to: "image_requests#destroy_result_image", as: :destroy_generated_image
   mount Sidekiq::Web => "/sidekiq"
   root "image_requests#index"
 end

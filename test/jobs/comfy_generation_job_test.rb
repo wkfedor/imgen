@@ -10,7 +10,10 @@ class FakeComfyClient
       filename: "#{result_id}.png",
       path: Rails.root.join("tmp/#{result_id}.png").to_s,
       bytes: 3,
-      duration_sec: 0.1
+      duration_sec: 0.1,
+      remote_filename: "remote-#{result_id}.png",
+      remote_subfolder: "",
+      remote_type: "output"
     }
   end
 end
@@ -28,5 +31,6 @@ class ComfyGenerationJobTest < ActiveSupport::TestCase
     assert_equal "completed", request.reload.status
     assert_equal %w[completed completed], request.image_results.order(:id).pluck(:status)
     assert_equal [123, 123], request.image_results.order(:id).pluck(:seed)
+    assert_equal ["remote-#{request.image_results.order(:id).first.id}.png", "remote-#{request.image_results.order(:id).second.id}.png"], request.image_results.order(:id).pluck(:remote_filename)
   end
 end
