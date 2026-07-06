@@ -1,0 +1,74 @@
+<section class="hero">
+  <div>
+    <h1>Imgen Comparator</h1>
+    <p>Один промпт отправляется в Sidekiq-очередь и последовательно генерируется на выбранных моделях ComfyUI.</p>
+  </div>
+  <a class="sidekiq-link" href="/sidekiq">Sidekiq</a>
+</section>
+
+<% if notice.present? %><p class="flash"><%= notice %></p><% end %>
+<% if alert.present? %><p class="flash flash-alert"><%= alert %></p><% end %>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Новый запрос</h2>
+    <button type="button" id="refresh-models">Обновить модели</button>
+  </div>
+  <% if @model_error.present? %>
+    <p class="flash flash-alert">Не удалось получить модели: <%= @model_error %></p>
+  <% end %>
+  <%= form_with url: image_requests_path, method: :post, local: true, class: "prompt-form" do %>
+    <textarea name="prompt" rows="5" required placeholder="cozy isometric Toca Boca style playroom, colorful furniture, empty floor area for placing game objects, soft light, high detail"></textarea>
+    <fieldset>
+      <legend>Модели на сервере</legend>
+      <div id="model-list" class="models">
+        <% @models.each do |model| %>
+          <label class="model-check">
+            <input type="checkbox" name="models[]" value="<%= model %>" checked>
+            <span><%= model %></span>
+          </label>
+        <% end %>
+      </div>
+    </fieldset>
+    <button type="submit">Добавить в очередь</button>
+  <% end %>
+</section>
+
+<section class="panel">
+  <h2>Очередь и результаты</h2>
+  <div class="requests" id="requests">
+    <% @image_requests.each do |request| %>
+      <article class="request" id="request-<%= request.id %>" data-request-id="<%= request.id %>">
+        <div class="request-head">
+          <strong>#<%= request.id %> · <span class="request-status"><%= request.status %></span></strong>
+          <span><%= request.created_at.strftime("%Y-%m-%d %H:%M:%S") %></span>
+        </div>
+        <p class="prompt"><%= request.prompt %></p>
+        <% if request.error_message.present? %>
+          <pre class="error"><%= request.error_message %></pre>
+        <% end %>
+        <div class="results">
+          <% request.image_results.order(:id).each do |result| %>
+            <div class="result-card status-<%= result.status %>" data-result-id="<%= result.id %>">
+              <h3><%= result.checkpoint_name %></h3>
+              <p class="result-status"><%= result.status %></p>
+              <% if result.image_file %>
+                <a href="<%= generated_image_path(result) %>" target="_blank" rel="noopener">
+                  <img src="<%= generated_image_path(result) %>" alt="<%= result.checkpoint_name %>">
+                </a>
+                <small>seed <%= result.seed %>, <%= result.duration_sec %> сек</small>
+              <% elsif result.error_message.present? %>
+                <pre class="error"><%= result.error_message %></pre>
+              <% else %>
+                <div class="placeholder">ожидает</div>
+              <% end %>
+            </div>
+          <% end %>
+        </div>
+        <% if request.failed? %>
+          <%= button_to "Повторить", retry_image_request_path(request), method: :post, form: { class: "retry-form" } %>
+        <% end %>
+      </article>
+    <% end %>
+  </div>
+</section>

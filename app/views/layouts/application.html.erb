@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Imgen</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <%= csrf_meta_tags %>
+    <%= csp_meta_tag %>
+
+    <%= stylesheet_link_tag "application" %>
+    <script>
+      function escapeHtml(value) {
+        return String(value).replace(/[&<>\"]/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[char]));
+      }
+
+      async function refreshModels() {
+        const button = document.getElementById("refresh-models");
+        const list = document.getElementById("model-list");
+        if (!button || !list) return;
+        button.disabled = true;
+        try {
+          const response = await fetch("/models");
+          const data = await response.json();
+          if (!data.models) return;
+          list.innerHTML = data.models.map((model) => {
+            const safe = escapeHtml(model);
+            return `<label class="model-check"><input type="checkbox" name="models[]" value="${safe}" checked><span>${safe}</span></label>`;
+          }).join("");
+        } finally {
+          button.disabled = false;
+        }
+      }
+
+      function refreshRunningRequests() {
+        const cards = [...document.querySelectorAll("[data-request-id]")];
+        if (cards.some((card) => /queued|running/.test(card.textContent))) window.location.reload();
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        document.getElementById("refresh-models")?.addEventListener("click", refreshModels);
+        document.getElementById("git-push-button")?.addEventListener("click", pushToGit);
+        setInterval(refreshRunningRequests, 5000);
+      });
+
+      async function pushToGit() {
+        const button = document.getElementById("git-push-button");
+        const output = document.getElementById("git-push-output");
+        if (!button || !output) return;
+        if (!window.confirm("Залить текущий проект imgen в github.com/wkfedor/imgen?")) return;
+
+        button.disabled = true;
+        output.hidden = false;
+        output.textContent = "Выполняю git add, commit и push...";
+
+        try {
+          const response = await fetch("<%= git_push_path %>", {
+            method: "POST",
+            headers: {
+              "Accept": "application/json",
+              "Content-Type": "application/json",
+              "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')?.content || ""
+            },
+            body: "{}"
+          });
+          const body = await response.json().catch(() => ({}));
+          output.textContent = [body.message || (response.ok ? "Готово" : "Ошибка git push"), body.log].filter(Boolean).join("\n\n");
+          output.classList.toggle("git-push-error", !response.ok || body.ok === false);
+        } catch (error) {
+          output.textContent = `Ошибка git push: ${error.message}`;
+          output.classList.add("git-push-error");
+        } finally {
+          button.disabled = false;
+        }
+      }
+    </script>
+  </head>
+
+  <body>
+    <div class="git-push-bar">
+      <button type="button" id="git-push-button" class="git-push-button">Залить в Git</button>
+      <a class="git-push-link" href="https://github.com/wkfedor/imgen" target="_blank" rel="noopener">github.com/wkfedor/imgen</a>
+      <pre id="git-push-output" class="git-push-output" hidden></pre>
+    </div>
+    <%= yield %>
+  </body>
+</html>
