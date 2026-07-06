@@ -101,7 +101,7 @@ class ComfyClient
   def generate_via_ssh(workflow)
     payload = JSON.generate(prompt: workflow, client_id: SecureRandom.uuid)
     output, error, status = Open3.capture3(
-      *ssh_command("COMFYUI_REMOTE_URL=#{Shellwords.escape(@remote_url)} ruby -e #{Shellwords.escape(remote_generation_script)}"),
+      *ssh_command("COMFYUI_REMOTE_URL=#{Shellwords.escape(@remote_url)} python3 -c #{Shellwords.escape(remote_generation_script)}"),
       stdin_data: payload
     )
     raise "ssh generation failed: #{error.strip}" unless status.success?
@@ -126,51 +126,64 @@ class ComfyClient
   end
 
   def remote_generation_script
-    <<~'RUBY'
-      require "json"
-      require "net/http"
-      require "uri"
+    <<~'PYTHON'
+      import json
+      import os
+      import sys
+      import time
+      import urllib.error
+      import urllib.parse
+      import urllib.request
 
-      server = ENV.fetch("COMFYUI_REMOTE_URL")
-      payload = JSON.parse(STDIN.read)
+      server = os.environ["COMFYUI_REMOTE_URL"].rstrip("/")
+      payload = json.loads(sys.stdin.buffer.read().decode("utf-8"))
 
-      def post_json(url, payload)
-        uri = URI(url)
-        request = Net::HTTP::Post.new(uri)
-        request["Content-Type"] = "application/json"
-        request.body = JSON.generate(payload)
-        Net::HTTP.start(uri.host, uri.port, read_timeout: 30, open_timeout: 5) { |http| http.request(request) }
-      end
+      def request_json(url, data=None, timeout=30):
+          body = None if data is None else json.dumps(data).encode("utf-8")
+          headers = {} if data is None else {"Content-Type": "application/json"}
+          request = urllib.request.Request(url, data=body, headers=headers)
+          with urllib.request.urlopen(request, timeout=timeout) as response:
+              return json.loads(response.read().decode("utf-8"))
 
-      response = post_json("#{server}/prompt", payload)
-      raise "prompt failed #{response.code}: #{response.body}" unless response.is_a?(Net::HTTPSuccess)
-      prompt_id = JSON.parse(response.body).fetch("prompt_id")
-      deadline = Time.now + Integer(ENV.fetch("IMGEN_TIMEOUT", "1200"))
-      history = nil
+      response = request_json(f"{server}/prompt", payload, timeout=30)
+      prompt_id = response["prompt_id"]
+      deadline = time.time() + int(os.environ.get("IMGEN_TIMEOUT", "1200"))
+      history = None
 
-      until Time.now > deadline
-        result = Net::HTTP.get_response(URI("#{server}/history/#{prompt_id}"))
-        raise "history failed #{result.code}: #{result.body}" unless result.is_a?(Net::HTTPSuccess)
-        history = JSON.parse(result.body)[prompt_id]
-        outputs = history && history.fetch("outputs", {})
-        break if outputs.values.any? { |node| node["images"].to_a.any? }
-        sleep 1
-      end
+      while time.time() <= deadline:
+          history_body = request_json(f"{server}/history/{prompt_id}", timeout=30)
+          history = history_body.get(prompt_id)
+          outputs = (history or {}).get("outputs", {})
+          if any(node.get("images") for node in outputs.values()):
+              break
+          time.sleep(1)
 
-      outputs = history && history.fetch("outputs", {})
-      node = outputs&.values&.find { |value| value["images"].to_a.any? }
-      image = node && node.fetch("images").first
-      raise "generation timeout or no image for prompt_id=#{prompt_id}" unless image
+      outputs = (history or {}).get("outputs", {})
+      image = None
+      for node in outputs.values():
+          images = node.get("images") or []
+          if images:
+              image = images[0]
+              break
+      if not image:
+          raise RuntimeError(f"generation timeout or no image for prompt_id={prompt_id}")
 
-      query = URI.encode_www_form(filename: image.fetch("filename"), subfolder: image.fetch("subfolder", ""), type: image.fetch("type", "output"))
-      image_response = Net::HTTP.get_response(URI("#{server}/view?#{query}"))
-      raise "view failed #{image_response.code}: #{image_response.body[0, 200]}" unless image_response.is_a?(Net::HTTPSuccess)
+      query = urllib.parse.urlencode({
+          "filename": image["filename"],
+          "subfolder": image.get("subfolder", ""),
+          "type": image.get("type", "output"),
+      })
+      with urllib.request.urlopen(f"{server}/view?{query}", timeout=60) as response:
+          image_body = response.read()
 
-      STDOUT.binmode
-      STDOUT.write(JSON.generate(prompt_id: prompt_id, image: image, bytes: image_response.body.bytesize))
-      STDOUT.write("\n---IMGEN_IMAGE---\n")
-      STDOUT.write(image_response.body)
-    RUBY
+      sys.stdout.buffer.write(json.dumps({
+          "prompt_id": prompt_id,
+          "image": image,
+          "bytes": len(image_body),
+      }).encode("utf-8"))
+      sys.stdout.buffer.write(b"\n---IMGEN_IMAGE---\n")
+      sys.stdout.buffer.write(image_body)
+    PYTHON
   end
 
   def remote_delete_command(relative:, prefix:)

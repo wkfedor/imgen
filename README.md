@@ -4,25 +4,33 @@ Rails-приложение для сравнения checkpoint-моделей C
 
 ## Запуск
 
-Приложение запускается через Foreman и `Procfile`: одним процессом поднимается Rails web-сервер, вторым — Sidekiq worker для очереди `imgen`.
+Приложение для разработки запускается через Foreman и `Procfile.dev`: одним процессом поднимается отдельный dev-Redis на порту `6380`, вторым — Rails web-сервер, третьим — Sidekiq worker для очереди `imgen`.
 
 ```bash
 cd /home/feda/imgen
 ruby -S bundle _2.4.22_ exec rails db:migrate
-redis-server --daemonize yes # если Redis ещё не запущен
-bin/dev
+ruby -S bundle _2.4.22_ exec foreman start -f Procfile.dev
 ```
 
 Открыть: `http://127.0.0.1:4567`.
 
-`bin/dev` использует `Procfile`:
+`bin/dev` запускает ту же команду Foreman:
 
-```Procfile
-web: ruby -S bundle _2.4.22_ exec rails server -b 127.0.0.1 -p ${PORT:-4567}
-worker: ruby -S bundle _2.4.22_ exec sidekiq -q imgen
+```bash
+bin/dev
 ```
 
-Важно: Rails server только ставит задания в очередь. Генерацию выполняет Sidekiq worker из `Procfile`, поэтому запускать приложение нужно через `bin/dev`, а не только через `rails server`.
+`Procfile.dev` содержит все локальные сервисы:
+
+```Procfile
+redis: redis-server --port 6380 --save "" --appendonly no
+web: REDIS_URL=redis://127.0.0.1:6380/0 ruby -S bundle _2.4.22_ exec rails server -b 127.0.0.1 -p ${PORT:-4567}
+worker: REDIS_URL=redis://127.0.0.1:6380/0 ruby -S bundle _2.4.22_ exec sidekiq -q imgen
+```
+
+Dev-Redis использует порт `6380`, чтобы не конфликтовать с уже запущенным системным Redis на `6379`.
+
+Важно: Rails server только ставит задания в очередь. Генерацию выполняет Sidekiq worker из `Procfile.dev`, поэтому запускать приложение нужно через Foreman или `bin/dev`, а не только через `rails server`.
 
 Если нужно запустить процессы вручную, команды такие:
 
@@ -41,6 +49,8 @@ ruby -S bundle _2.4.22_ exec rails server -b 127.0.0.1 -p 4567
 Сгенерированные изображения сохраняются локально в `/home/feda/imgen/storage/generated` и показываются через `/generated_images/:id`.
 
 У каждой готовой картинки есть кнопка **Удалить картинку**. Она удаляет локальную копию из `storage/generated` и файл на ComfyUI-сервере `http://192.168.0.106` через SSH-доступ `IMGEN_SSH_HOST`.
+
+У каждого prompt-запроса есть кнопка **Удалить промпт**. Она удаляет сам prompt из базы и предварительно удаляет все связанные картинки локально и на ComfyUI-сервере.
 
 ## Заливка в GitHub
 

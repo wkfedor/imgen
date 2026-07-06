@@ -17,9 +17,13 @@ button:disabled { opacity: 0.6; cursor: wait; }
 .git-push-output.git-push-error { border-color: #fecaca; background: #fef2f2; color: #991b1b; }
 .panel { background: #fff; border: 1px solid #d9e2ec; border-radius: 8px; }
 .panel-head, .request-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.request-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 .flash { max-width: 1280px; margin: 12px auto; padding: 12px; border-radius: 6px; background: #e0f2fe; }
 .flash-alert { background: #fee2e2; color: #991b1b; }
 textarea { width: 100%; resize: vertical; border: 1px solid #bcccdc; border-radius: 6px; padding: 12px; font-size: 15px; }
+.generation-settings { display: grid; grid-template-columns: repeat(3, minmax(120px, 1fr)); gap: 10px; margin: 12px 0 0; }
+.generation-settings label { display: grid; gap: 5px; color: #52606d; font-size: 13px; font-weight: 700; }
+.generation-settings input { width: 100%; border: 1px solid #bcccdc; border-radius: 6px; padding: 9px 10px; font-size: 15px; }
 fieldset { border: 1px solid #d9e2ec; border-radius: 6px; margin: 14px 0; padding: 12px; }
 legend { padding: 0 6px; font-weight: 700; }
 .models { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; }
@@ -27,6 +31,7 @@ legend { padding: 0 6px; font-weight: 700; }
 .request { border-top: 1px solid #d9e2ec; padding: 16px 0; }
 .request:first-child { border-top: 0; padding-top: 0; }
 .prompt { white-space: pre-wrap; color: #334e68; }
+.request-settings { margin-top: -6px; color: #627d98; font-size: 13px; }
 .results { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
 .result-card { border: 1px solid #d9e2ec; border-radius: 8px; padding: 12px; background: #fbfdff; min-height: 260px; }
 .result-card h3 { margin: 0 0 8px; font-size: 14px; overflow-wrap: anywhere; }
@@ -41,3 +46,6 @@ legend { padding: 0 6px; font-weight: 700; }
 .delete-image-form { margin-top: 10px; }
 .delete-image-button { width: 100%; background: #dc2626; }
 .delete-image-button:hover { background: #b91c1c; }
+.delete-request-form { margin: 0; }
+.delete-request-button { background: #7f1d1d; padding: 8px 10px; }
+.delete-request-button:hover { background: #991b1b; }

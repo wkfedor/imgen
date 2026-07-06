@@ -17,10 +17,13 @@ class ImageRequestsController < ApplicationController
   def create
     prompt = params[:prompt].to_s.strip
     models = Array(params[:models]).map(&:to_s).map(&:strip).reject(&:blank?)
+    width = bounded_integer(params[:width], default: 1024, min: 128, max: 1536)
+    height = bounded_integer(params[:height], default: 1024, min: 128, max: 1536)
+    steps = bounded_integer(params[:steps], default: 24, min: 1, max: 80)
     raise "Промпт пустой" if prompt.blank?
     raise "Выберите хотя бы одну модель" if models.blank?
 
-    request = ImageRequest.create!(prompt: prompt)
+    request = ImageRequest.create!(prompt: prompt, width: width, height: height, steps: steps)
     models.each { |model| request.image_results.create!(checkpoint_name: model) }
     ComfyGenerationJob.perform_async(request.id)
 
@@ -46,6 +49,15 @@ class ImageRequestsController < ApplicationController
     ComfyGenerationJob.perform_async(request.id)
 
     redirect_to image_requests_path(anchor: "request-#{request.id}"), notice: "Задача ##{request.id} повторно добавлена в очередь"
+  end
+
+  def destroy
+    request = ImageRequest.includes(:image_results).find(params[:id])
+    deleted = request.destroy_with_images!
+
+    redirect_to image_requests_path, notice: "Промпт ##{request.id} удалён: локальных картинок=#{deleted[:local_deleted]}, серверных=#{deleted[:remote_deleted]}"
+  rescue StandardError => e
+    redirect_to image_requests_path, alert: "Не удалось удалить промпт: #{e.message}"
   end
 
   def models
@@ -78,6 +90,9 @@ class ImageRequestsController < ApplicationController
       id: request.id,
       prompt: request.prompt,
       status: request.status,
+      width: request.width,
+      height: request.height,
+      steps: request.steps,
       error_message: request.error_message,
       results: request.image_results.order(:id).map do |result|
         {
@@ -91,5 +106,12 @@ class ImageRequestsController < ApplicationController
         }
       end
     }
+  end
+
+  def bounded_integer(value, default:, min:, max:)
+    parsed = Integer(value.presence || default)
+    [[parsed, min].max, max].min
+  rescue ArgumentError, TypeError
+    default
   end
 end

@@ -47,4 +47,16 @@ class ImageRequestsControllerTest < ActionDispatch::IntegrationTest
     assert_match "удалена", flash[:notice]
     assert_equal "deleted", result.reload.status
   end
+
+  test "destroy removes request and its result records" do
+    request_record = ImageRequest.create!(prompt: "prompt", status: "completed")
+    result = request_record.image_results.create!(checkpoint_name: "a.safetensors", status: "completed")
+
+    delete image_request_path(request_record)
+
+    assert_redirected_to image_requests_path
+    assert_match "Промпт", flash[:notice]
+    assert_raises(ActiveRecord::RecordNotFound) { request_record.reload }
+    assert_raises(ActiveRecord::RecordNotFound) { result.reload }
+  end
 end

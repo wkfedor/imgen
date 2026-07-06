@@ -19,6 +19,20 @@
   <% end %>
   <%= form_with url: image_requests_path, method: :post, local: true, class: "prompt-form" do %>
     <textarea name="prompt" rows="5" required placeholder="cozy isometric Toca Boca style playroom, colorful furniture, empty floor area for placing game objects, soft light, high detail"></textarea>
+    <div class="generation-settings">
+      <label>
+        <span>Width</span>
+        <input type="number" name="width" min="128" max="1536" step="64" value="384">
+      </label>
+      <label>
+        <span>Height</span>
+        <input type="number" name="height" min="128" max="1536" step="64" value="384">
+      </label>
+      <label>
+        <span>Steps</span>
+        <input type="number" name="steps" min="1" max="80" step="1" value="14">
+      </label>
+    </div>
     <fieldset>
       <legend>Модели на сервере</legend>
       <div id="model-list" class="models">
@@ -41,9 +55,13 @@
       <article class="request" id="request-<%= request.id %>" data-request-id="<%= request.id %>">
         <div class="request-head">
           <strong>#<%= request.id %> · <span class="request-status"><%= request.status %></span></strong>
-          <span><%= request.created_at.strftime("%Y-%m-%d %H:%M:%S") %></span>
+          <div class="request-actions">
+            <span><%= request.created_at.strftime("%Y-%m-%d %H:%M:%S") %></span>
+            <%= button_to "Удалить промпт", image_request_path(request), method: :delete, form: { class: "delete-request-form", onsubmit: "return confirm('Удалить промпт и все его картинки локально и с сервера ComfyUI?')" }, class: "delete-request-button" %>
+          </div>
         </div>
         <p class="prompt"><%= request.prompt %></p>
+        <p class="request-settings"><%= request.width %>x<%= request.height %>, <%= request.steps %> steps</p>
         <% if request.error_message.present? %>
           <pre class="error"><%= request.error_message %></pre>
         <% end %>

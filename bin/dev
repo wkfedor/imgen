@@ -5,4 +5,4 @@ cd "$(dirname "$0")/.."
 
 export PORT="${PORT:-4567}"
 
-exec ruby -S bundle _2.4.22_ exec foreman start -f Procfile
+exec ruby -S bundle _2.4.22_ exec foreman start -f Procfile.dev

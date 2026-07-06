@@ -13,7 +13,14 @@ class ComfyGenerationJob
     request.image_results.order(:id).find_each do |result|
       result.update!(status: "running", error_message: nil)
       begin
-        generated = client.generate(prompt: request.prompt, model: result.checkpoint_name, result_id: result.id)
+        generated = client.generate(
+          prompt: request.prompt,
+          model: result.checkpoint_name,
+          result_id: result.id,
+          width: request.width,
+          height: request.height,
+          steps: request.steps
+        )
         result.update!(status: "completed", prompt_id: generated.fetch(:prompt_id), seed: generated.fetch(:seed), filename: generated.fetch(:filename), path: generated.fetch(:path), bytes: generated.fetch(:bytes), duration_sec: generated.fetch(:duration_sec), remote_filename: generated[:remote_filename], remote_subfolder: generated[:remote_subfolder], remote_type: generated[:remote_type])
       rescue StandardError => e
         result.update!(status: "failed", error_message: e.message)
