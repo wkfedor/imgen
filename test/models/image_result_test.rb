@@ -9,8 +9,8 @@ class FakeDeleteComfyClient
     @deleted = []
   end
 
-  def delete_remote_image(filename:, subfolder:, type:)
-    @deleted << { filename: filename, subfolder: subfolder, type: type }
+  def delete_remote_image(filename:, subfolder:, type:, prefix: nil)
+    @deleted << { filename: filename, subfolder: subfolder, type: type, prefix: prefix }
     true
   end
 end
@@ -41,7 +41,7 @@ class ImageResultTest < ActiveSupport::TestCase
     end
 
     assert_not file.exist?
-    assert_equal [{ filename: "remote.png", subfolder: "", type: "output" }], client.deleted
+    assert_equal [{ filename: "remote.png", subfolder: "", type: "output", prefix: nil }], client.deleted
     assert_equal "deleted", result.reload.status
     assert_nil result.path
     assert_nil result.remote_filename
@@ -65,6 +65,6 @@ class ImageResultTest < ActiveSupport::TestCase
       assert_equal({ local_deleted: false, remote_deleted: true }, deleted)
     end
 
-    assert_equal [{ filename: "imgen_1_model_00001_.png", subfolder: nil, type: nil }], client.deleted
+    assert_equal [{ filename: "imgen_1_model_00001_.png", subfolder: nil, type: nil, prefix: "imgen_1_model" }], client.deleted
   end
 end

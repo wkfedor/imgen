@@ -54,9 +54,20 @@ class ImageResult < ApplicationRecord
 
   def delete_remote_image
     inferred_filename = remote_filename.presence || inferred_remote_filename
-    return false if inferred_filename.blank?
+    prefix = remote_delete_prefix
+    return false if inferred_filename.blank? && prefix.blank?
 
-    ComfyClient.new.delete_remote_image(filename: inferred_filename, subfolder: remote_subfolder, type: remote_type)
+    ComfyClient.new.delete_remote_image(filename: inferred_filename, subfolder: remote_subfolder, type: remote_type, prefix: prefix)
+  end
+
+  def remote_delete_prefix
+    return nil if filename.blank?
+
+    marker = "_000"
+    index = filename.index(marker)
+    return nil unless index
+
+    filename[0...index]
   end
 
   def inferred_remote_filename

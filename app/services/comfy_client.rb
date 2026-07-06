@@ -48,17 +48,17 @@ class ComfyClient
     generated.merge(seed: seed, duration_sec: (Time.current - started_at).round(1))
   end
 
-  def delete_remote_image(filename:, subfolder: nil, type: nil)
-    filename = File.basename(filename.to_s)
-    raise "remote filename blank" if filename.blank?
-
+  def delete_remote_image(filename: nil, subfolder: nil, type: nil, prefix: nil)
+    filename = File.basename(filename.to_s) if filename.present?
+    prefix = safe_remote_prefix(prefix)
     subfolder = subfolder.to_s
     type = type.to_s.presence || "output"
     raise "remote type #{type.inspect} is not allowed" unless %w[input output temp].include?(type)
+    raise "remote filename or prefix blank" if filename.blank? && prefix.blank?
 
-    relative = [type, subfolder, filename].reject(&:blank?).join("/")
-    ssh_capture("ruby -e #{Shellwords.escape(remote_delete_script)} -- #{Shellwords.escape(relative)}")
-    true
+    relative = filename.present? ? [type, subfolder, filename].reject(&:blank?).join("/") : ""
+    output = ssh_capture(remote_delete_command(relative: relative, prefix: prefix.to_s))
+    output.to_i.positive?
   end
 
   private
@@ -173,32 +173,32 @@ class ComfyClient
     RUBY
   end
 
-  def remote_delete_script
-    <<~'RUBY'
-      require "pathname"
+  def remote_delete_command(relative:, prefix:)
+    type = relative.to_s.split("/", 2).first.presence || "output"
+    raise "remote type #{type.inspect} is not allowed" unless %w[input output temp].include?(type)
 
-      relative = ARGV.fetch(0)
-      root = Pathname(ENV.fetch("COMFYUI_ROOT", File.expand_path("~/ComfyUI")))
-      allowed_roots = {
-        "input" => root.join("input"),
-        "output" => root.join("output"),
-        "temp" => root.join("temp")
-      }
-      type = relative.split("/", 2).first
-      base = allowed_roots.fetch(type)
-      target = root.join(relative).cleanpath
+    commands = [
+      "set -eu",
+      "deleted=0",
+      "base_dir=\"$HOME/ComfyUI/#{type}\""
+    ]
 
-      unless target.to_s.start_with?(base.cleanpath.to_s + "/")
-        raise "refuse to delete outside #{base}: #{target}"
-      end
+    if relative.present?
+      path_without_type = relative.split("/", 2).last.to_s
+      commands << "target=\"$base_dir/#{path_without_type.shellescape}\""
+      commands << "case \"$target\" in \"$base_dir\"/*) ;; *) echo refused >&2; exit 2 ;; esac"
+      commands << "if [ -f \"$target\" ]; then rm -f -- \"$target\"; deleted=$((deleted + 1)); fi"
+    end
 
-      if target.file?
-        target.delete
-        puts "deleted #{target}"
-      else
-        puts "not found #{target}"
-      end
-    RUBY
+    if prefix.present?
+      raise "unsafe prefix #{prefix.inspect}" unless prefix.match?(/\A[a-zA-Z0-9_.-]+\z/)
+
+      commands << "find \"$base_dir\" -maxdepth 1 -type f -name #{(prefix + "*.png").shellescape} -exec rm -f -- {} \\; -exec printf 'x' \\; | wc -c | { read n; deleted=$((deleted + n)); echo \"$deleted\"; }"
+    else
+      commands << "echo \"$deleted\""
+    end
+
+    commands.join("; ")
   end
 
   def wait_for_image(base_url:, prompt_id:)
@@ -274,6 +274,11 @@ class ComfyClient
 
   def safe_name(value)
     value.to_s.gsub(/[^a-zA-Z0-9_.-]+/, "_")[0, 80]
+  end
+
+  def safe_remote_prefix(value)
+    sanitized = value.to_s.gsub(/[^a-zA-Z0-9_.-]+/, "_")
+    sanitized.presence
   end
 
   def local_filename(remote_filename, prompt_id)
