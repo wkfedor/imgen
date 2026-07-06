@@ -129,12 +129,25 @@ class ComfyClient
   end
 
   def recover_remote_output_by_prefix(prefix:, started_at:, original_error:)
-    image = latest_remote_output_for_prefix(prefix, started_at: started_at)
+    image = wait_for_remote_output_by_prefix(prefix, started_at: started_at)
     raise original_error unless image
 
     save_remote_image_via_ssh(image: image, prompt_id: "recovered-#{SecureRandom.hex(8)}")
   rescue StandardError
     raise original_error
+  end
+
+  def wait_for_remote_output_by_prefix(prefix, started_at:)
+    deadline = Time.current + ENV.fetch("IMGEN_RECOVERY_TIMEOUT", "300").to_i.seconds
+
+    until Time.current > deadline
+      image = latest_remote_output_for_prefix(prefix, started_at: started_at)
+      return image if image
+
+      sleep 3
+    end
+
+    nil
   end
 
   def latest_remote_output_for_prefix(prefix, started_at:)
@@ -268,10 +281,15 @@ class ComfyClient
   def wait_for_image(base_url:, prompt_id:)
     deadline = Time.current + 20.minutes
     until Time.current > deadline
-      history = get_json("#{base_url}/history/#{prompt_id}")
-      outputs = history[prompt_id]&.fetch("outputs", {})
-      node = outputs&.values&.find { |value| value["images"].to_a.any? }
-      return node.fetch("images").first if node
+      begin
+        history = get_json("#{base_url}/history/#{prompt_id}")
+        outputs = history[prompt_id]&.fetch("outputs", {})
+        node = outputs&.values&.find { |value| value["images"].to_a.any? }
+        return node.fetch("images").first if node
+      rescue Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNREFUSED, Errno::EHOSTUNREACH, SocketError => e
+        Rails.logger.warn("ComfyUI history polling transient error for #{prompt_id}: #{e.class}: #{e.message}")
+      end
+
       sleep 1
     end
     raise "generation timeout or no image for prompt_id=#{prompt_id}"
@@ -280,7 +298,9 @@ class ComfyClient
   def save_direct_image(image:, prompt_id:)
     query = URI.encode_www_form(filename: image.fetch("filename"), subfolder: image.fetch("subfolder", ""), type: image.fetch("type", "output"))
     uri = URI("#{@direct_url}/view?#{query}")
-    response = Net::HTTP.start(uri.host, uri.port, read_timeout: 60, open_timeout: 5) { |http| http.request(Net::HTTP::Get.new(uri)) }
+    response = with_retries(max_attempts: 5, delay: 3, label: "ComfyUI view #{image.fetch("filename")}") do
+      Net::HTTP.start(uri.host, uri.port, read_timeout: 120, open_timeout: 10) { |http| http.request(Net::HTTP::Get.new(uri)) }
+    end
     raise "view failed #{response.code}: #{response.body[0, 200]}" unless response.is_a?(Net::HTTPSuccess)
 
     filename = local_filename(image.fetch("filename"), prompt_id)
@@ -324,6 +344,21 @@ class ComfyClient
     response = Net::HTTP.start(uri.host, uri.port, read_timeout: 30, open_timeout: 5) { |http| http.request(request) }
     raise "POST #{url} failed #{response.code}: #{response.body}" unless response.is_a?(Net::HTTPSuccess)
     JSON.parse(response.body)
+  end
+
+  def with_retries(max_attempts:, delay:, label:)
+    attempts = 0
+
+    begin
+      attempts += 1
+      yield
+    rescue Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNREFUSED, Errno::EHOSTUNREACH, SocketError => e
+      raise if attempts >= max_attempts
+
+      Rails.logger.warn("#{label} transient error attempt #{attempts}/#{max_attempts}: #{e.class}: #{e.message}")
+      sleep delay
+      retry
+    end
   end
 
   def ssh_capture(command)
