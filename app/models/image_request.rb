@@ -39,8 +39,8 @@ class ImageRequest < ApplicationRecord
   private
 
   def apply_generation_defaults
-    self.width ||= 1024
-    self.height ||= 1024
-    self.steps ||= 24
+    self.width ||= 768
+    self.height ||= 1344
+    self.steps ||= 60
   end
 end

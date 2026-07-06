@@ -1,0 +1,18 @@
+<section class="hero">
+  <div>
+    <h1>Imgen</h1>
+    <p>Два режима работы: обычная генерация и эволюция промптов вместе с ИИ.</p>
+  </div>
+  <a class="sidekiq-link" href="/sidekiq">Sidekiq</a>
+</section>
+
+<section class="panel mode-grid">
+  <a class="mode-card" href="<%= image_requests_path %>">
+    <strong>Обычный режим</strong>
+    <span>Работает как раньше: один промпт можно отправить на несколько моделей.</span>
+  </a>
+  <a class="mode-card" href="<%= prompt_projects_path %>">
+    <strong>Эволюция промпта с ИИ</strong>
+    <span>Одна модель за прогон, feedback пользователя, новая версия промпта через LM Studio/Qwen.</span>
+  </a>
+</section>

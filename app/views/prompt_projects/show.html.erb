@@ -1,0 +1,228 @@
+<section class="hero">
+  <div>
+    <h1><%= @project.title %></h1>
+    <p><%= @project.original_goal %></p>
+  </div>
+  <div class="header-actions">
+    <a class="sidekiq-link" href="/sidekiq">Sidekiq</a>
+    <a class="sidekiq-link" href="<%= prompt_projects_path %>">Проекты</a>
+  </div>
+</section>
+
+<script>
+  (() => {
+    const terminalStatuses = new Set(["completed", "failed"]);
+
+    async function refreshRun(card) {
+      const runId = card.dataset.runId;
+      if (!runId) return false;
+
+      const response = await fetch(`/prompt_runs/${runId}`, { headers: { Accept: "application/json" } });
+      if (!response.ok) return false;
+
+      const data = await response.json();
+      const currentStatus = card.querySelector(".result-status")?.textContent?.trim();
+      if (data.status !== currentStatus || data.image_url || data.error_message) {
+        window.location.reload();
+        return true;
+      }
+      return terminalStatuses.has(data.status);
+    }
+
+    async function refreshActiveRuns() {
+      const active = Array.from(document.querySelectorAll(".result-card[data-run-id]")).filter((card) => {
+        const status = card.querySelector(".result-status")?.textContent?.trim();
+        return status && !terminalStatuses.has(status);
+      });
+
+      if (active.length === 0) return;
+      await Promise.allSettled(active.map(refreshRun));
+      window.setTimeout(refreshActiveRuns, 5000);
+    }
+
+    window.setTimeout(refreshActiveRuns, 1500);
+  })();
+</script>
+
+<% if notice.present? %><p class="flash"><%= notice %></p><% end %>
+<% if alert.present? %><p class="flash flash-alert"><%= alert %></p><% end %>
+
+<% if @sidekiq_process_count == 0 %>
+  <p class="flash flash-alert">Sidekiq не виден в Redis: новые генерации будут стоять в очереди, пока worker не запущен через Procfile.dev.</p>
+<% elsif @sidekiq_process_count.present? %>
+  <p class="flash queue-status">Sidekiq активен: процессов <%= @sidekiq_process_count %>. Задачи можно смотреть в <a href="/sidekiq">/sidekiq</a>.</p>
+<% else %>
+  <p class="flash queue-status">Статус Sidekiq не удалось проверить. Задачи можно смотреть в <a href="/sidekiq">/sidekiq</a>.</p>
+<% end %>
+
+<section class="panel">
+  <h2>Критерии готовности</h2>
+  <p class="prompt"><%= @project.acceptance_criteria.presence || "Не заданы" %></p>
+</section>
+
+<% if @active_revision %>
+  <section class="panel" id="active-revision-<%= @active_revision.id %>">
+    <div class="panel-head">
+      <h2>Активная версия <%= @active_revision.version_label %></h2>
+      <span class="muted"><%= @active_revision.created_at.strftime("%Y-%m-%d %H:%M:%S") %></span>
+    </div>
+    <p class="prompt"><%= @active_revision.prompt %></p>
+    <% if @active_revision.negative_prompt.present? %>
+      <p class="request-settings">Negative: <%= @active_revision.negative_prompt %></p>
+    <% end %>
+    <% if @active_revision.change_summary.present? %>
+      <p class="request-settings"><%= @active_revision.change_summary %></p>
+    <% end %>
+
+    <% if @model_error.present? %>
+      <p class="flash flash-alert">Не удалось получить модели: <%= @model_error %></p>
+    <% end %>
+    <%= form_with url: run_prompt_project_path(@project), method: :post, local: true, class: "prompt-form" do %>
+      <input type="hidden" name="prompt_revision_id" value="<%= @active_revision.id %>">
+      <div class="generation-settings">
+        <label>
+          <span>Width</span>
+          <input type="number" name="width" min="128" max="1536" step="64" value="768">
+        </label>
+        <label>
+          <span>Height</span>
+          <input type="number" name="height" min="128" max="1536" step="64" value="1344">
+        </label>
+        <label>
+          <span>Steps</span>
+          <input type="number" name="steps" min="1" max="80" step="1" value="60">
+        </label>
+      </div>
+      <fieldset>
+        <legend>Одна модель для этого прогона</legend>
+        <div class="models">
+          <% @models.each_with_index do |model, index| %>
+            <label class="model-check">
+              <input type="radio" name="checkpoint_name" value="<%= model %>" <%= "checked" if index.zero? %> required>
+              <span><%= model %></span>
+            </label>
+          <% end %>
+          <% if @models.empty? %>
+            <p class="muted">Модели не загрузились. Проверьте ComfyUI/SSH и обновите страницу.</p>
+          <% end %>
+        </div>
+      </fieldset>
+      <button type="submit" <%= "disabled" if @models.empty? %>>Сгенерировать эту версию</button>
+    <% end %>
+  </section>
+<% end %>
+
+<section class="panel">
+  <h2>Дерево версий и прогоны</h2>
+  <% @project.prompt_revisions.oldest_first.each do |revision| %>
+    <article class="revision-card" id="revision-<%= revision.id %>">
+      <div class="panel-head">
+        <h3><%= revision.version_label %></h3>
+        <span class="muted">parent: <%= revision.parent_revision&.version_label || "нет" %></span>
+      </div>
+      <p class="prompt"><%= revision.prompt %></p>
+      <% if revision.change_summary.present? %>
+        <p class="request-settings"><%= revision.change_summary %></p>
+      <% end %>
+
+      <details class="inline-run-form" <%= "open" if revision.prompt_runs.empty? %>>
+        <summary><%= revision.prompt_runs.empty? ? "Картинки нет: запустить генерацию" : "Запустить генерацию этой версии" %></summary>
+        <%= form_with url: run_prompt_project_path(@project), method: :post, local: true, class: "prompt-form" do %>
+          <input type="hidden" name="prompt_revision_id" value="<%= revision.id %>">
+          <div class="generation-settings">
+            <label>
+              <span>Width</span>
+              <input type="number" name="width" min="128" max="1536" step="64" value="768">
+            </label>
+            <label>
+              <span>Height</span>
+              <input type="number" name="height" min="128" max="1536" step="64" value="1344">
+            </label>
+            <label>
+              <span>Steps</span>
+              <input type="number" name="steps" min="1" max="80" step="1" value="60">
+            </label>
+          </div>
+          <fieldset>
+            <legend>Одна модель для этого прогона</legend>
+            <div class="models">
+              <% @models.each_with_index do |model, index| %>
+                <label class="model-check">
+                  <input type="radio" name="checkpoint_name" value="<%= model %>" <%= "checked" if index.zero? %> required>
+                  <span><%= model %></span>
+                </label>
+              <% end %>
+              <% if @models.empty? %>
+                <p class="muted">Модели не загрузились. Проверьте ComfyUI/SSH и обновите страницу.</p>
+              <% end %>
+            </div>
+          </fieldset>
+          <button type="submit" <%= "disabled" if @models.empty? %>>Сгенерировать версию <%= revision.version_label %></button>
+        <% end %>
+      </details>
+
+      <div class="results">
+        <% revision.prompt_runs.recent_first.each do |run| %>
+          <div class="result-card status-<%= run.status %>" id="run-<%= run.id %>" data-run-id="<%= run.id %>">
+            <h3><%= run.checkpoint_name %></h3>
+            <p class="result-status"><%= run.status %></p>
+            <small><%= run.width %>x<%= run.height %>, <%= run.steps %> steps<%= ", seed #{run.seed}" if run.seed %></small>
+            <% if run.image_file %>
+              <a href="<%= prompt_run_image_path(run) %>" target="_blank" rel="noopener">
+                <img src="<%= prompt_run_image_path(run) %>" alt="<%= run.checkpoint_name %>">
+              </a>
+            <% elsif run.error_message.present? %>
+              <pre class="error"><%= run.error_message %></pre>
+            <% else %>
+              <div class="placeholder">ожидает</div>
+            <% end %>
+
+            <% if run.status == "completed" %>
+              <% if run.prompt_feedbacks.any? %>
+                <div class="feedback-history">
+                  <h4>Сохранённый feedback</h4>
+                  <% run.prompt_feedbacks.order(created_at: :desc).each do |feedback| %>
+                    <div class="feedback-entry">
+                      <small><%= feedback.created_at.strftime("%Y-%m-%d %H:%M:%S") %></small>
+                      <% if feedback.positives.present? %><p><strong>Что хорошо:</strong> <%= feedback.positives %></p><% end %>
+                      <% if feedback.negatives.present? %><p><strong>Что плохо:</strong> <%= feedback.negatives %></p><% end %>
+                      <% if feedback.keep.present? %><p><strong>Сохранить:</strong> <%= feedback.keep %></p><% end %>
+                      <% if feedback.remove.present? %><p><strong>Убрать:</strong> <%= feedback.remove %></p><% end %>
+                      <% if feedback.next_direction.present? %><p><strong>Куда двигаться:</strong> <%= feedback.next_direction %></p><% end %>
+                      <% if feedback.ai_evaluation.present? %><p><strong>ИИ:</strong> <%= feedback.ai_evaluation %></p><% end %>
+                      <% if feedback.next_prompt_revision.present? %><p><strong>Новая версия:</strong> <%= feedback.next_prompt_revision.version_label %></p><% end %>
+                    </div>
+                  <% end %>
+                </div>
+              <% end %>
+
+              <%= form_with url: prompt_run_prompt_feedbacks_path(run), method: :post, local: true, class: "feedback-form" do %>
+                <label>
+                  <span>Что хорошо</span>
+                  <textarea name="positives" rows="2"></textarea>
+                </label>
+                <label>
+                  <span>Что плохо</span>
+                  <textarea name="negatives" rows="2" required></textarea>
+                </label>
+                <label>
+                  <span>Сохранить</span>
+                  <textarea name="keep" rows="2"></textarea>
+                </label>
+                <label>
+                  <span>Убрать</span>
+                  <textarea name="remove" rows="2"></textarea>
+                </label>
+                <label>
+                  <span>Куда двигаться</span>
+                  <textarea name="next_direction" rows="2"></textarea>
+                </label>
+                <button type="submit">Создать следующую версию через ИИ</button>
+              <% end %>
+            <% end %>
+          </div>
+        <% end %>
+      </div>
+    </article>
+  <% end %>
+</section>

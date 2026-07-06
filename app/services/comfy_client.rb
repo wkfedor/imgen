@@ -9,8 +9,6 @@ require "shellwords"
 require "uri"
 
 class ComfyClient
-  DEFAULT_NEGATIVE = "text, watermark, logo, blurry, low quality, distorted, bad anatomy, extra fingers"
-
   def initialize(
     direct_url: ENV.fetch("COMFYUI_URL", "http://192.168.0.106:8188"),
     remote_url: ENV.fetch("COMFYUI_REMOTE_URL", "http://127.0.0.1:8188"),
@@ -34,6 +32,7 @@ class ComfyClient
 
   def generate(prompt:, model:, result_id:, steps: 24, width: 1024, height: 1024)
     seed = rand(1_000_000_000)
+    prefix = "imgen_#{result_id}_#{safe_name(model)}"
     workflow = workflow_for(
       model: model,
       prompt: prompt,
@@ -41,10 +40,14 @@ class ComfyClient
       steps: steps,
       width: width,
       height: height,
-      prefix: "imgen_#{result_id}_#{safe_name(model)}"
+      prefix: prefix
     )
     started_at = Time.current
-    generated = direct_available? ? generate_direct(workflow) : generate_via_ssh(workflow)
+    generated = begin
+      direct_available? ? generate_direct(workflow) : generate_via_ssh(workflow)
+    rescue StandardError => e
+      recover_remote_output_by_prefix(prefix: prefix, started_at: started_at, original_error: e)
+    end
     generated.merge(seed: seed, duration_sec: (Time.current - started_at).round(1))
   end
 
@@ -122,6 +125,54 @@ class ComfyClient
       remote_filename: image[:filename],
       remote_subfolder: image[:subfolder],
       remote_type: image[:type]
+    }
+  end
+
+  def recover_remote_output_by_prefix(prefix:, started_at:, original_error:)
+    image = latest_remote_output_for_prefix(prefix, started_at: started_at)
+    raise original_error unless image
+
+    save_remote_image_via_ssh(image: image, prompt_id: "recovered-#{SecureRandom.hex(8)}")
+  rescue StandardError
+    raise original_error
+  end
+
+  def latest_remote_output_for_prefix(prefix, started_at:)
+    prefix = safe_remote_prefix(prefix)
+    raise "remote prefix blank" if prefix.blank?
+    started_epoch = started_at.to_f
+
+    script = <<~SH
+      set -eu
+      base="$HOME/ComfyUI/output"
+      find "$base" -maxdepth 1 -type f -name #{(prefix + "*.png").shellescape} -printf '%T@\t%f\n' | awk -F '\t' '$1 >= #{started_epoch}' | sort -nr | head -1
+    SH
+    line = ssh_capture(script).lines.first.to_s.strip
+    return nil if line.blank?
+
+    filename = line.split("\t", 2).last.to_s.strip
+    return nil if filename.blank?
+
+    { filename: filename, subfolder: "", type: "output" }
+  end
+
+  def save_remote_image_via_ssh(image:, prompt_id:)
+    remote_filename = image.fetch(:filename)
+    query = URI.encode_www_form(filename: remote_filename, subfolder: image[:subfolder].to_s, type: image[:type].presence || "output")
+    command = "curl -fsSL #{Shellwords.escape("#{@remote_url}/view?#{query}")}"
+    image_body = ssh_capture(command)
+
+    filename = local_filename(remote_filename, prompt_id)
+    path = @output_dir.join(filename)
+    File.binwrite(path, image_body)
+    {
+      prompt_id: prompt_id,
+      filename: filename,
+      path: path.to_s,
+      bytes: File.size(path),
+      remote_filename: remote_filename,
+      remote_subfolder: image[:subfolder].to_s,
+      remote_type: image[:type].presence || "output"
     }
   end
 
@@ -252,7 +303,7 @@ class ComfyClient
       "4" => { "class_type" => "CheckpointLoaderSimple", "inputs" => { "ckpt_name" => model } },
       "5" => { "class_type" => "EmptyLatentImage", "inputs" => { "width" => width, "height" => height, "batch_size" => 1 } },
       "6" => { "class_type" => "CLIPTextEncode", "inputs" => { "text" => prompt, "clip" => ["4", 1] } },
-      "7" => { "class_type" => "CLIPTextEncode", "inputs" => { "text" => DEFAULT_NEGATIVE, "clip" => ["4", 1] } },
+      "7" => { "class_type" => "ConditioningZeroOut", "inputs" => { "conditioning" => ["6", 0] } },
       "8" => { "class_type" => "VAEDecode", "inputs" => { "samples" => ["3", 0], "vae" => ["4", 2] } },
       "9" => { "class_type" => "SaveImage", "inputs" => { "filename_prefix" => prefix, "images" => ["8", 0] } }
     }

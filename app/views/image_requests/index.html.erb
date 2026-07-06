@@ -22,15 +22,15 @@
     <div class="generation-settings">
       <label>
         <span>Width</span>
-        <input type="number" name="width" min="128" max="1536" step="64" value="384">
+        <input type="number" name="width" min="128" max="1536" step="64" value="768">
       </label>
       <label>
         <span>Height</span>
-        <input type="number" name="height" min="128" max="1536" step="64" value="384">
+        <input type="number" name="height" min="128" max="1536" step="64" value="1344">
       </label>
       <label>
         <span>Steps</span>
-        <input type="number" name="steps" min="1" max="80" step="1" value="14">
+        <input type="number" name="steps" min="1" max="80" step="1" value="60">
       </label>
     </div>
     <fieldset>
@@ -70,16 +70,57 @@
             <div class="result-card status-<%= result.status %>" data-result-id="<%= result.id %>">
               <h3><%= result.checkpoint_name %></h3>
               <p class="result-status"><%= result.status %></p>
+              <p class="request-settings"><%= result.generation_width %>x<%= result.generation_height %>, <%= result.generation_steps %> steps</p>
               <% if result.image_file %>
                 <a href="<%= generated_image_path(result) %>" target="_blank" rel="noopener">
                   <img src="<%= generated_image_path(result) %>" alt="<%= result.checkpoint_name %>">
                 </a>
                 <small>seed <%= result.seed %>, <%= result.duration_sec %> сек</small>
+                <details class="actual-prompt">
+                  <summary>Промпт, реально отправленный в ИИ</summary>
+                  <p><%= result.prompt_sent_to_ai %></p>
+                </details>
+                <%= form_with url: regenerate_generated_image_path(result), method: :post, local: true, class: "retry-form regenerate-form" do %>
+                  <label>
+                    <span>Промпт</span>
+                    <textarea name="prompt" rows="3"><%= result.prompt_sent_to_ai %></textarea>
+                  </label>
+                  <div class="generation-settings">
+                    <label><span>Width</span><input type="number" name="width" min="128" max="1536" step="64" value="<%= result.generation_width %>"></label>
+                    <label><span>Height</span><input type="number" name="height" min="128" max="1536" step="64" value="<%= result.generation_height %>"></label>
+                    <label><span>Steps</span><input type="number" name="steps" min="1" max="80" step="1" value="<%= result.generation_steps %>"></label>
+                  </div>
+                  <button type="submit">Перегенерить</button>
+                <% end %>
                 <%= button_to "Удалить картинку", destroy_generated_image_path(result), method: :delete, form: { class: "delete-image-form", onsubmit: "return confirm('Удалить картинку локально и с сервера ComfyUI?')" }, class: "delete-image-button" %>
               <% elsif result.error_message.present? %>
                 <pre class="error"><%= result.error_message %></pre>
+                <%= form_with url: regenerate_generated_image_path(result), method: :post, local: true, class: "retry-form regenerate-form" do %>
+                  <label>
+                    <span>Промпт</span>
+                    <textarea name="prompt" rows="3"><%= result.prompt_sent_to_ai %></textarea>
+                  </label>
+                  <div class="generation-settings">
+                    <label><span>Width</span><input type="number" name="width" min="128" max="1536" step="64" value="<%= result.generation_width %>"></label>
+                    <label><span>Height</span><input type="number" name="height" min="128" max="1536" step="64" value="<%= result.generation_height %>"></label>
+                    <label><span>Steps</span><input type="number" name="steps" min="1" max="80" step="1" value="<%= result.generation_steps %>"></label>
+                  </div>
+                  <button type="submit">Перегенерить</button>
+                <% end %>
               <% elsif result.status == "deleted" %>
                 <div class="placeholder">удалена</div>
+                <%= form_with url: regenerate_generated_image_path(result), method: :post, local: true, class: "retry-form regenerate-form" do %>
+                  <label>
+                    <span>Промпт</span>
+                    <textarea name="prompt" rows="3"><%= result.prompt_sent_to_ai %></textarea>
+                  </label>
+                  <div class="generation-settings">
+                    <label><span>Width</span><input type="number" name="width" min="128" max="1536" step="64" value="<%= result.generation_width %>"></label>
+                    <label><span>Height</span><input type="number" name="height" min="128" max="1536" step="64" value="<%= result.generation_height %>"></label>
+                    <label><span>Steps</span><input type="number" name="steps" min="1" max="80" step="1" value="<%= result.generation_steps %>"></label>
+                  </div>
+                  <button type="submit">Перегенерить</button>
+                <% end %>
               <% else %>
                 <div class="placeholder">ожидает</div>
               <% end %>
@@ -87,9 +128,109 @@
           <% end %>
         </div>
         <% if request.failed? %>
-          <%= button_to "Повторить", retry_image_request_path(request), method: :post, form: { class: "retry-form" } %>
+          <details class="inline-run-form">
+            <summary>Повторить весь промпт с параметрами</summary>
+            <%= form_with url: retry_image_request_path(request), method: :post, local: true, class: "retry-form regenerate-form" do %>
+              <label>
+                <span>Промпт</span>
+                <textarea name="prompt" rows="5"><%= request.prompt %></textarea>
+              </label>
+              <div class="generation-settings">
+                <label><span>Width</span><input type="number" name="width" min="128" max="1536" step="64" value="<%= request.width %>"></label>
+                <label><span>Height</span><input type="number" name="height" min="128" max="1536" step="64" value="<%= request.height %>"></label>
+                <label><span>Steps</span><input type="number" name="steps" min="1" max="80" step="1" value="<%= request.steps %>"></label>
+              </div>
+              <button type="submit">Повторить</button>
+            <% end %>
+          </details>
         <% end %>
       </article>
     <% end %>
   </div>
 </section>
+
+<script>
+  (() => {
+    const terminalStatuses = new Set(["completed", "failed", "deleted"]);
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[char]));
+    }
+
+    function renderResult(result) {
+      const classes = `result-card status-${escapeHtml(result.status)}`;
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || "";
+      const prompt = escapeHtml(result.actual_prompt);
+      const regenerateForm = `
+        <form class="button_to retry-form regenerate-form" method="post" action="${escapeHtml(result.regenerate_url)}">
+          <input type="hidden" name="authenticity_token" value="${escapeHtml(csrfToken)}" autocomplete="off">
+          <label>
+            <span>Промпт</span>
+            <textarea name="prompt" rows="3">${prompt}</textarea>
+          </label>
+          <div class="generation-settings">
+            <label><span>Width</span><input type="number" name="width" min="128" max="1536" step="64" value="${escapeHtml(result.width)}"></label>
+            <label><span>Height</span><input type="number" name="height" min="128" max="1536" step="64" value="${escapeHtml(result.height)}"></label>
+            <label><span>Steps</span><input type="number" name="steps" min="1" max="80" step="1" value="${escapeHtml(result.steps)}"></label>
+          </div>
+          <button type="submit">Перегенерить</button>
+        </form>`;
+      let body = "";
+      if (result.image_url) {
+        body = `
+          <a href="${escapeHtml(result.image_url)}" target="_blank" rel="noopener">
+            <img src="${escapeHtml(result.image_url)}" alt="${escapeHtml(result.checkpoint_name)}">
+          </a>
+          <small>seed ${escapeHtml(result.seed)}, ${escapeHtml(result.duration_sec)} сек</small>
+          <details class="actual-prompt">
+            <summary>Промпт, реально отправленный в ИИ</summary>
+            <p>${escapeHtml(result.actual_prompt)}</p>
+          </details>
+          ${regenerateForm}`;
+      } else if (result.error_message) {
+        body = `<pre class="error">${escapeHtml(result.error_message)}</pre>
+          ${regenerateForm}`;
+      } else if (result.status === "deleted") {
+        body = `<div class="placeholder">удалена</div>
+          ${regenerateForm}`;
+      } else {
+        body = `<div class="placeholder">ожидает</div>`;
+      }
+
+      return `
+        <div class="${classes}" data-result-id="${escapeHtml(result.id)}">
+          <h3>${escapeHtml(result.checkpoint_name)}</h3>
+          <p class="result-status">${escapeHtml(result.status)}</p>
+          <p class="request-settings">${escapeHtml(result.width)}x${escapeHtml(result.height)}, ${escapeHtml(result.steps)} steps</p>
+          ${body}
+        </div>`;
+    }
+
+    async function refreshRequest(article) {
+      const requestId = article.dataset.requestId;
+      if (!requestId) return true;
+
+      const response = await fetch(`/image_requests/${requestId}`, { headers: { Accept: "application/json" } });
+      if (!response.ok) return false;
+
+      const data = await response.json();
+      article.querySelector(".request-status").textContent = data.status;
+      const results = article.querySelector(".results");
+      results.innerHTML = data.results.map(renderResult).join("");
+      return terminalStatuses.has(data.status) && data.results.every((result) => terminalStatuses.has(result.status));
+    }
+
+    async function refreshActiveRequests() {
+      const active = Array.from(document.querySelectorAll(".request")).filter((article) => {
+        const status = article.querySelector(".request-status")?.textContent?.trim();
+        return status && !terminalStatuses.has(status);
+      });
+
+      if (active.length === 0) return;
+      await Promise.allSettled(active.map(refreshRequest));
+      window.setTimeout(refreshActiveRequests, 5000);
+    }
+
+    window.setTimeout(refreshActiveRequests, 1500);
+  })();
+</script>

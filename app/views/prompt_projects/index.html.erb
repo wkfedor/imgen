@@ -1,0 +1,52 @@
+<section class="hero">
+  <div>
+    <h1>Эволюция промптов</h1>
+    <p>Один промпт, одна модель за прогон, feedback пользователя и новая версия через LM Studio/Qwen.</p>
+  </div>
+  <a class="sidekiq-link" href="<%= root_path %>">На главную</a>
+</section>
+
+<% if notice.present? %><p class="flash"><%= notice %></p><% end %>
+<% if alert.present? %><p class="flash flash-alert"><%= alert %></p><% end %>
+
+<section class="panel">
+  <h2>Новый проект</h2>
+  <%= form_with url: prompt_projects_path, method: :post, local: true, class: "prompt-form" do %>
+    <label class="field-block">
+      <span>Название</span>
+      <input type="text" name="title" required placeholder="Например: Пропсы для игры - стеллаж">
+    </label>
+    <label class="field-block">
+      <span>Цель</span>
+      <textarea name="original_goal" rows="3" required placeholder="Что нужно получить в итоге"></textarea>
+    </label>
+    <label class="field-block">
+      <span>Критерии готовности</span>
+      <textarea name="acceptance_criteria" rows="3" placeholder="Как понять, что результат подходит"></textarea>
+    </label>
+    <label class="field-block">
+      <span>Исходный промпт</span>
+      <textarea name="prompt" rows="5" required placeholder="Финальный промпт для первой генерации"></textarea>
+    </label>
+    <label class="field-block">
+      <span>Negative prompt</span>
+      <textarea name="negative_prompt" rows="2" placeholder="Что модель должна избегать"></textarea>
+    </label>
+    <button type="submit">Создать проект</button>
+  <% end %>
+</section>
+
+<section class="panel">
+  <h2>Проекты</h2>
+  <div class="project-list">
+    <% @projects.each do |project| %>
+      <a class="project-row" href="<%= prompt_project_path(project) %>">
+        <strong><%= project.title %></strong>
+        <span><%= project.active_prompt_revision&.version_label || "без версий" %></span>
+      </a>
+    <% end %>
+    <% if @projects.empty? %>
+      <p class="muted">Пока нет проектов эволюции промптов.</p>
+    <% end %>
+  </div>
+</section>

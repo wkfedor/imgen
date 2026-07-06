@@ -6,6 +6,24 @@ class ImageResult < ApplicationRecord
   belongs_to :image_request
   validates :checkpoint_name, presence: true
   validates :status, inclusion: { in: STATUSES }
+  validates :width, :height, numericality: { only_integer: true, greater_than_or_equal_to: 128, less_than_or_equal_to: 1536 }, allow_nil: true
+  validates :steps, numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 80 }, allow_nil: true
+
+  def prompt_sent_to_ai
+    actual_prompt.presence || image_request.prompt
+  end
+
+  def generation_width
+    width || image_request.width
+  end
+
+  def generation_height
+    height || image_request.height
+  end
+
+  def generation_steps
+    steps || image_request.steps
+  end
 
   def image_file
     return nil if path.blank?
@@ -38,6 +56,29 @@ class ImageResult < ApplicationRecord
     )
 
     { local_deleted: local_deleted, remote_deleted: remote_deleted }
+  end
+
+  def reset_for_regeneration!(prompt:, width:, height:, steps:)
+    delete_local_image
+    delete_remote_image
+
+    update!(
+      status: "queued",
+      prompt_id: nil,
+      seed: nil,
+      filename: nil,
+      path: nil,
+      bytes: nil,
+      duration_sec: nil,
+      error_message: nil,
+      actual_prompt: prompt,
+      width: width,
+      height: height,
+      steps: steps,
+      remote_filename: nil,
+      remote_subfolder: nil,
+      remote_type: nil
+    )
   end
 
   private

@@ -11,7 +11,7 @@ class ComfyGenerationJob
     client = ComfyClient.new
 
     request.image_results.order(:id).find_each do |result|
-      result.update!(status: "running", error_message: nil)
+      result.update!(status: "running", error_message: nil, actual_prompt: request.prompt, width: request.width, height: request.height, steps: request.steps)
       begin
         generated = client.generate(
           prompt: request.prompt,
