@@ -3,7 +3,7 @@
 class ComfyResultGenerationJob
   include Sidekiq::Job
 
-  sidekiq_options queue: :imgen, retry: false
+  sidekiq_options queue: :comfy_generation, retry: false
 
   def perform(image_result_id)
     result = ImageResult.includes(:image_request).find(image_result_id)

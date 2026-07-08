@@ -3,7 +3,7 @@
 require "test_helper"
 
 class FakeComfyClient
-  def generate(prompt:, model:, result_id:)
+  def generate(prompt:, model:, result_id:, width: 1024, height: 1024, steps: 24)
     {
       prompt_id: "prompt-#{result_id}",
       seed: 123,
@@ -19,13 +19,36 @@ class FakeComfyClient
 end
 
 class ComfyGenerationJobTest < ActiveSupport::TestCase
-  test "generates every selected model result" do
+  test "enqueues one generation job per selected model result" do
+    ComfyResultGenerationJob.jobs.clear
+
     request = ImageRequest.create!(prompt: "same prompt")
-    request.image_results.create!(checkpoint_name: "a.safetensors")
-    request.image_results.create!(checkpoint_name: "b.safetensors")
+    first_result = request.image_results.create!(checkpoint_name: "a.safetensors")
+    second_result = request.image_results.create!(checkpoint_name: "b.safetensors")
+
+    ComfyGenerationJob.new.perform(request.id)
+
+    assert_equal "queued", request.reload.status
+    assert_equal 2, ComfyResultGenerationJob.jobs.size
+    assert_equal [first_result.id, second_result.id], ComfyResultGenerationJob.jobs.map { |job| job["args"].first }
+    assert_equal ["comfy_generation", "comfy_generation"], ComfyResultGenerationJob.jobs.map { |job| job["queue"] }
+  end
+
+  test "result generation job generates one image and refreshes aggregate status" do
+    request = ImageRequest.create!(prompt: "same prompt")
+    first_result = request.image_results.create!(checkpoint_name: "a.safetensors")
+    second_result = request.image_results.create!(checkpoint_name: "b.safetensors")
 
     ComfyClient.stub(:new, FakeComfyClient.new) do
-      ComfyGenerationJob.new.perform(request.id)
+      ComfyResultGenerationJob.new.perform(first_result.id)
+    end
+
+    assert_equal "running", request.reload.status
+    assert_equal "completed", first_result.reload.status
+    assert_equal "queued", second_result.reload.status
+
+    ComfyClient.stub(:new, FakeComfyClient.new) do
+      ComfyResultGenerationJob.new.perform(second_result.id)
     end
 
     assert_equal "completed", request.reload.status

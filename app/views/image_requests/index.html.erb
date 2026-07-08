@@ -3,7 +3,10 @@
     <h1>Imgen Comparator</h1>
     <p>Один промпт отправляется в Sidekiq-очередь и последовательно генерируется на выбранных моделях ComfyUI.</p>
   </div>
-  <a class="sidekiq-link" href="/sidekiq">Sidekiq</a>
+  <div class="request-actions">
+    <a class="sidekiq-link" href="/sidekiq">Sidekiq</a>
+    <%= button_to "Удалить все промпты", destroy_all_image_requests_path, method: :delete, form: { class: "delete-request-form", onsubmit: "return confirm('Удалить ВСЕ промпты и все картинки локально и с сервера ComfyUI?')" }, class: "delete-request-button" %>
+  </div>
 </section>
 
 <% if notice.present? %><p class="flash"><%= notice %></p><% end %>
@@ -35,12 +38,15 @@
     </div>
     <fieldset>
       <legend>Модели на сервере</legend>
-      <div id="model-list" class="models">
+      <div id="model-list" class="models" data-autoload="true">
         <% @models.each do |model| %>
           <label class="model-check">
             <input type="checkbox" name="models[]" value="<%= model %>" checked>
             <span><%= model %></span>
           </label>
+        <% end %>
+        <% if @models.empty? %>
+          <p class="muted">Модели загрузятся отдельным запросом. Если список пустой, нажмите «Обновить модели».</p>
         <% end %>
       </div>
     </fieldset>
@@ -54,7 +60,7 @@
     <% @image_requests.each do |request| %>
       <article class="request" id="request-<%= request.id %>" data-request-id="<%= request.id %>">
         <div class="request-head">
-          <strong>#<%= request.id %> · <span class="request-status"><%= request.status %></span></strong>
+          <strong>#<%= request.id %> · <span class="request-status"><%= request.status %></span><% if request.api_source? %> · <span class="source-badge">api</span><% end %></strong>
           <div class="request-actions">
             <span><%= request.created_at.strftime("%Y-%m-%d %H:%M:%S") %></span>
             <%= button_to "Удалить промпт", image_request_path(request), method: :delete, form: { class: "delete-request-form", onsubmit: "return confirm('Удалить промпт и все его картинки локально и с сервера ComfyUI?')" }, class: "delete-request-button" %>
@@ -65,67 +71,9 @@
         <% if request.error_message.present? %>
           <pre class="error"><%= request.error_message %></pre>
         <% end %>
-        <div class="results">
-          <% request.image_results.order(:id).each do |result| %>
-            <div class="result-card status-<%= result.status %>" data-result-id="<%= result.id %>">
-              <h3><%= result.checkpoint_name %></h3>
-              <p class="result-status"><%= result.status %></p>
-              <p class="request-settings"><%= result.generation_width %>x<%= result.generation_height %>, <%= result.generation_steps %> steps</p>
-              <% if result.image_file %>
-                <a href="<%= generated_image_path(result) %>" target="_blank" rel="noopener">
-                  <img src="<%= generated_image_path(result) %>" alt="<%= result.checkpoint_name %>">
-                </a>
-                <small>seed <%= result.seed %>, <%= result.duration_sec %> сек</small>
-                <details class="actual-prompt">
-                  <summary>Промпт, реально отправленный в ИИ</summary>
-                  <p><%= result.prompt_sent_to_ai %></p>
-                </details>
-                <%= form_with url: regenerate_generated_image_path(result), method: :post, local: true, class: "retry-form regenerate-form" do %>
-                  <label>
-                    <span>Промпт</span>
-                    <textarea name="prompt" rows="3"><%= result.prompt_sent_to_ai %></textarea>
-                  </label>
-                  <div class="generation-settings">
-                    <label><span>Width</span><input type="number" name="width" min="128" max="1536" step="64" value="<%= result.generation_width %>"></label>
-                    <label><span>Height</span><input type="number" name="height" min="128" max="1536" step="64" value="<%= result.generation_height %>"></label>
-                    <label><span>Steps</span><input type="number" name="steps" min="1" max="80" step="1" value="<%= result.generation_steps %>"></label>
-                  </div>
-                  <button type="submit">Перегенерить</button>
-                <% end %>
-                <%= button_to "Удалить картинку", destroy_generated_image_path(result), method: :delete, form: { class: "delete-image-form", onsubmit: "return confirm('Удалить картинку локально и с сервера ComfyUI?')" }, class: "delete-image-button" %>
-              <% elsif result.error_message.present? %>
-                <pre class="error"><%= result.error_message %></pre>
-                <%= form_with url: regenerate_generated_image_path(result), method: :post, local: true, class: "retry-form regenerate-form" do %>
-                  <label>
-                    <span>Промпт</span>
-                    <textarea name="prompt" rows="3"><%= result.prompt_sent_to_ai %></textarea>
-                  </label>
-                  <div class="generation-settings">
-                    <label><span>Width</span><input type="number" name="width" min="128" max="1536" step="64" value="<%= result.generation_width %>"></label>
-                    <label><span>Height</span><input type="number" name="height" min="128" max="1536" step="64" value="<%= result.generation_height %>"></label>
-                    <label><span>Steps</span><input type="number" name="steps" min="1" max="80" step="1" value="<%= result.generation_steps %>"></label>
-                  </div>
-                  <button type="submit">Перегенерить</button>
-                <% end %>
-              <% elsif result.status == "deleted" %>
-                <div class="placeholder">удалена</div>
-                <%= form_with url: regenerate_generated_image_path(result), method: :post, local: true, class: "retry-form regenerate-form" do %>
-                  <label>
-                    <span>Промпт</span>
-                    <textarea name="prompt" rows="3"><%= result.prompt_sent_to_ai %></textarea>
-                  </label>
-                  <div class="generation-settings">
-                    <label><span>Width</span><input type="number" name="width" min="128" max="1536" step="64" value="<%= result.generation_width %>"></label>
-                    <label><span>Height</span><input type="number" name="height" min="128" max="1536" step="64" value="<%= result.generation_height %>"></label>
-                    <label><span>Steps</span><input type="number" name="steps" min="1" max="80" step="1" value="<%= result.generation_steps %>"></label>
-                  </div>
-                  <button type="submit">Перегенерить</button>
-                <% end %>
-              <% else %>
-                <div class="placeholder">ожидает</div>
-              <% end %>
-            </div>
-          <% end %>
+        <button type="button" class="load-results-button" data-load-results>Показать картинки</button>
+        <div class="results" data-loaded="false">
+          <div class="placeholder">детали загрузятся отдельно</div>
         </div>
         <% if request.failed? %>
           <details class="inline-run-form">
@@ -206,30 +154,96 @@
         </div>`;
     }
 
-    async function refreshRequest(article) {
-      const requestId = article.dataset.requestId;
-      if (!requestId) return true;
-
-      const response = await fetch(`/image_requests/${requestId}`, { headers: { Accept: "application/json" } });
-      if (!response.ok) return false;
-
-      const data = await response.json();
+    function updateRequest(article, data) {
       article.querySelector(".request-status").textContent = data.status;
       const results = article.querySelector(".results");
-      results.innerHTML = data.results.map(renderResult).join("");
+      results.innerHTML = "";
+
+      data.results.forEach((result) => {
+        const existing = results.querySelector(`[data-result-id="${CSS.escape(String(result.id))}"]`);
+        const rendered = renderResult(result).trim();
+        if (!existing) {
+          results.insertAdjacentHTML("beforeend", rendered);
+          return;
+        }
+
+        const previousState = existing.dataset.renderState || "";
+        const nextState = JSON.stringify({
+          status: result.status,
+          error_message: result.error_message,
+          image_url: result.image_url,
+          seed: result.seed,
+          duration_sec: result.duration_sec,
+          width: result.width,
+          height: result.height,
+          steps: result.steps,
+          actual_prompt: result.actual_prompt
+        });
+
+        if (previousState !== nextState) {
+          existing.outerHTML = rendered;
+          const updated = results.querySelector(`[data-result-id="${CSS.escape(String(result.id))}"]`);
+          if (updated) updated.dataset.renderState = nextState;
+        }
+      });
+
       return terminalStatuses.has(data.status) && data.results.every((result) => terminalStatuses.has(result.status));
+    }
+
+    async function loadRequestDetails(article) {
+      const requestId = article.dataset.requestId;
+      if (!requestId) return;
+
+      const button = article.querySelector("[data-load-results]");
+      if (button) button.disabled = true;
+      try {
+        const response = await fetch(`/api/v1/image_requests/statuses?ids=${encodeURIComponent(requestId)}`, { headers: { Accept: "application/json" } });
+        if (!response.ok) return;
+
+        const body = await response.json();
+        const request = body.data.requests[0];
+        if (!request) return;
+
+        updateRequest(article, request);
+        article.querySelector(".results").dataset.loaded = "true";
+      } finally {
+        if (button) button.disabled = false;
+      }
     }
 
     async function refreshActiveRequests() {
       const active = Array.from(document.querySelectorAll(".request")).filter((article) => {
         const status = article.querySelector(".request-status")?.textContent?.trim();
-        return status && !terminalStatuses.has(status);
+        const resultsLoaded = article.querySelector(".results")?.dataset.loaded === "true";
+        return status && !terminalStatuses.has(status) && !resultsLoaded;
       });
 
       if (active.length === 0) return;
-      await Promise.allSettled(active.map(refreshRequest));
-      window.setTimeout(refreshActiveRequests, 5000);
+      const ids = active.map((article) => article.dataset.requestId).filter(Boolean);
+      const response = await fetch(`/api/v1/image_requests/statuses?ids=${encodeURIComponent(ids.join(","))}`, { headers: { Accept: "application/json" } });
+      if (response.ok) {
+        const body = await response.json();
+        const byId = new Map(active.map((article) => [Number(article.dataset.requestId), article]));
+        body.data.requests.forEach((request) => {
+          const article = byId.get(Number(request.id));
+          if (article) {
+            updateRequest(article, request);
+            article.querySelector(".results").dataset.loaded = "true";
+          }
+        });
+      }
+
+      const delay = active.length > 50 ? 30000 : active.length > 10 ? 10000 : 5000;
+      window.setTimeout(refreshActiveRequests, delay);
     }
+
+    document.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-load-results]");
+      if (!button) return;
+
+      const article = button.closest(".request");
+      if (article) loadRequestDetails(article);
+    });
 
     window.setTimeout(refreshActiveRequests, 1500);
   })();

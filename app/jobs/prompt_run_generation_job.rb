@@ -3,7 +3,7 @@
 class PromptRunGenerationJob
   include Sidekiq::Job
 
-  sidekiq_options queue: :imgen, retry: false
+  sidekiq_options queue: :comfy_generation, retry: false
 
   def perform(prompt_run_id)
     run = PromptRun.includes(:prompt_revision).find(prompt_run_id)

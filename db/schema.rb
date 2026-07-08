@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_06_193000) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_07_170000) do
   create_table "image_requests", force: :cascade do |t|
     t.text "prompt", null: false
     t.string "status", default: "queued", null: false
@@ -22,7 +22,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_06_193000) do
     t.integer "width", default: 768, null: false
     t.integer "height", default: 1344, null: false
     t.integer "steps", default: 60, null: false
+    t.string "source", default: "web", null: false
     t.index ["created_at"], name: "index_image_requests_on_created_at"
+    t.index ["source"], name: "index_image_requests_on_source"
     t.index ["status"], name: "index_image_requests_on_status"
   end
 

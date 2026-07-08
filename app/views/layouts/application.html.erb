@@ -30,15 +30,10 @@
         }
       }
 
-      function refreshRunningRequests() {
-        const cards = [...document.querySelectorAll("[data-request-id]")];
-        if (cards.some((card) => /queued|running/.test(card.textContent))) window.location.reload();
-      }
-
       document.addEventListener("DOMContentLoaded", () => {
         document.getElementById("refresh-models")?.addEventListener("click", refreshModels);
+        if (document.getElementById("model-list")?.dataset.autoload === "true") refreshModels();
         document.getElementById("git-push-button")?.addEventListener("click", pushToGit);
-        setInterval(refreshRunningRequests, 5000);
       });
 
       async function pushToGit() {
